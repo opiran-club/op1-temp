@@ -11,52 +11,65 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the code
+      # Checkout
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Node.js
+      # Node.js Setup
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # Step 3: Install dependencies
+      # Install Dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Step 4: Build the project
+      # Build Project
       - name: Build project
         run: npm run build
 
-      # Step 4.5: Verify build output
-      - name: List build directory
+      # List build output
+      - name: List build output
         run: ls -al build/
 
-      # Step 5: Create and push a version tag
-      - name: Create GitHub tag
-        id: create_tag
+      # Create a Tag
+      - name: Create and push tag
+        id: tagging
         run: |
           TAG_NAME="v0.9.5.${{ github.run_number }}"
-          git tag $TAG_NAME
-          git push origin $TAG_NAME
-          echo "::set-output name=tag_name::$TAG_NAME"
+          
+          # Delete old tag & release if exists
+          gh release delete "$TAG_NAME" -y || true
+          git tag -d "$TAG_NAME" || true
+          git push origin :refs/tags/"$TAG_NAME" || true
 
-      # Step 6: Generate release notes from commits
+          # Create new tag
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate Release Notes (Latest commit only)
       - name: Generate release notes
-        id: generate_notes
+        id: notes
         run: |
-          # Fetch the commit messages since the last tag
-          COMMITS=$(git log --oneline ${{ steps.create_tag.outputs.tag_name }}..HEAD)
-          echo "::set-output name=commits::$COMMITS"
+          NOTE=$(git log -1 --pretty=format:"%s")
+          echo "RELEASE_NOTES=$NOTE" >> $GITHUB_ENV
 
-      # Step 7: Publish to GitHub Releases
+      # Create Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: build/**
-          tag_name: ${{ steps.create_tag.outputs.tag_name }}
-          release_name: "Version ${{ steps.create_tag.outputs.tag_name }}"
-          body: ${{ steps.generate_notes.outputs.commits }}
+          tag_name: ${{ env.TAG_NAME }}
+          name: "Release ${{ env.TAG_NAME }}"
+          body: ${{ env.RELEASE_NOTES }}
+          files: |
+            build/index.html
+            build/index.php
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
