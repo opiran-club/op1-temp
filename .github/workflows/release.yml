@@ -33,30 +33,37 @@ jobs:
       - name: List build directory
         run: ls -al build/
 
-      # Step 5: Create and push a version tag
-      - name: Create GitHub tag
+      # Step 5: Create and push a version tag (using GH_TOKEN)
+      - name: Create GitHub tag and push
         id: create_tag
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           TAG_NAME="v0.1.${{ github.run_number }}"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
           git tag $TAG_NAME
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}
           git push origin $TAG_NAME
-          echo "::set-output name=tag_name::$TAG_NAME"
 
       # Step 6: Generate release notes from commits
       - name: Generate release notes
         id: generate_notes
         run: |
-          # Fetch the commit messages since the last tag
-          COMMITS=$(git log --oneline ${{ steps.create_tag.outputs.tag_name }}..HEAD)
-          echo "::set-output name=commits::$COMMITS"
+          COMMITS=$(git log --oneline $(git describe --tags --abbrev=0 HEAD^)..HEAD)
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       # Step 7: Publish to GitHub Releases
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: build/**
-          tag_name: ${{ steps.create_tag.outputs.tag_name }}
-          release_name: "Version ${{ steps.create_tag.outputs.tag_name }}"
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: "Version ${{ env.TAG_NAME }}"
           body: ${{ steps.generate_notes.outputs.commits }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
