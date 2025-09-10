@@ -11,50 +11,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Step 2: Set up Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
+      # Step 4: Build the project
       - name: Build project
         run: npm run build
 
-      - name: Copy index.html to index.php
-        run: cp build/index.html build/index.php
-
+      # Step 5: List build output
       - name: List build directory
         run: ls -al build/
 
-      - name: Create tag (if it doesn't exist already)
+      # Step 6: Prepare version tag
+      - name: Delete existing tag if needed
+        run: |
+          TAG_NAME="v0.1.${{ github.run_number }}"
+          git tag -d $TAG_NAME || true
+          git push origin :refs/tags/$TAG_NAME || true
+
+      - name: Create GitHub tag
         id: create_tag
         run: |
           TAG_NAME="v0.1.${{ github.run_number }}"
+          git tag $TAG_NAME
+          git push origin $TAG_NAME
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git tag -f $TAG_NAME || true
-          git push origin $TAG_NAME --force
 
+      # Step 7: Generate release notes
       - name: Generate release notes
         id: generate_notes
         run: |
-          echo "commits=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
+          COMMITS=$(git log -1 --pretty=format:"%s")
+          echo "commits=$COMMITS" >> $GITHUB_OUTPUT
 
+      # Step 8: Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.create_tag.outputs.tag_name }}
           name: "Version ${{ steps.create_tag.outputs.tag_name }}"
           body: ${{ steps.generate_notes.outputs.commits }}
-          files: |
-            build/index.html
-            build/index.php
-            build/**
+          files: build/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
