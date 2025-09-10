@@ -11,59 +11,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Step 4: Build the project
       - name: Build project
         run: npm run build
 
-      # Step 4.5: Verify build output
+      - name: Copy index.html to index.php
+        run: cp build/index.html build/index.php
+
       - name: List build directory
         run: ls -al build/
 
-      # Step 5: Create and push a version tag (using GH_TOKEN)
-      - name: Create GitHub tag and push
+      - name: Create tag (if it doesn't exist already)
         id: create_tag
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           TAG_NAME="v0.1.${{ github.run_number }}"
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -f $TAG_NAME || true
+          git push origin $TAG_NAME --force
 
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag $TAG_NAME
-          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}
-          git push origin $TAG_NAME
-
-      # Step 6: Generate release notes from commits
       - name: Generate release notes
         id: generate_notes
         run: |
-          COMMITS=$(git log --oneline $(git describe --tags --abbrev=0 HEAD^)..HEAD)
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "commits=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
 
-      # Step 7: Publish to GitHub Releases
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: build/**
-          tag_name: ${{ env.TAG_NAME }}
-          release_name: "Version ${{ env.TAG_NAME }}"
+          tag_name: ${{ steps.create_tag.outputs.tag_name }}
+          name: "Version ${{ steps.create_tag.outputs.tag_name }}"
           body: ${{ steps.generate_notes.outputs.commits }}
+          files: |
+            build/index.html
+            build/index.php
+            build/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
